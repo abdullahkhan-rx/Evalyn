@@ -1,7 +1,9 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { api } from "@/lib/api";
+import { api } from "@/lib/api"; // ✅ UNCHANGED — kept for invite/delete mutations
+import { useApplications, applicationKeys } from "@/lib/hooks/useApplications"; // ✨ NEW - OPTIMIZATION
+import { useQueryClient } from "@tanstack/react-query"; // ✨ NEW - OPTIMIZATION
 import { StatusBadge } from "@/components/ui/status-badge";
 import { ScoreRing } from "@/components/ui/score-ring";
 import {
@@ -27,7 +29,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Eye, Search, Filter, Loader2, Trash2, Mail, Send, Download } from "lucide-react";
 import Link from "next/link";
-import { useState, useEffect } from "react";
+import { useState, useEffect } from "react"; // ✅ UNCHANGED (useEffect still needed for selectedIds sync)
 import { toast } from "sonner";
 import { formatDistanceToNow } from "date-fns";
 import JSZip from "jszip";
@@ -47,7 +49,7 @@ interface Application {
     expected_salary?: number;
     salary_filter_status?: string;
     created_at?: string;
-    candidate?: { full_name?: string; email?: string; candidate_profile?: { resume_url?: string } };
+    candidate?: { full_name?: string; email?: string };
     job?: { title?: string };
 }
 
@@ -64,36 +66,30 @@ const defaultMessage = (candidateName: string, jobTitle: string) =>
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ApplicationsPage() {
-    const [searchTerm, setSearchTerm] = useState("");
-    const [cityFilter, setCityFilter] = useState("all");
-    const [applications, setApplications] = useState<Application[]>([]);
-    const [isLoading, setIsLoading] = useState(true);
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-    const [isDownloading, setIsDownloading] = useState(false);
+export default function ApplicationsPage() { // ✅ UNCHANGED
+    const queryClient = useQueryClient(); // ✨ NEW - OPTIMIZATION
+    const [searchTerm, setSearchTerm] = useState(""); // ✅ UNCHANGED
+    const [cityFilter, setCityFilter] = useState("all"); // ✅ UNCHANGED
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set()); // ✅ UNCHANGED
+    const [isDownloading, setIsDownloading] = useState(false); // ✅ UNCHANGED
 
-    // ── Invite modal state
-    const [inviteApp, setInviteApp] = useState<Application | null>(null);
-    const [inviteSubject, setInviteSubject] = useState("");
-    const [inviteMessage, setInviteMessage] = useState("");
-    const [isSending, setIsSending] = useState(false);
+    // ── Invite modal state // ✅ UNCHANGED
+    const [inviteApp, setInviteApp] = useState<Application | null>(null); // ✅ UNCHANGED
+    const [inviteSubject, setInviteSubject] = useState(""); // ✅ UNCHANGED
+    const [inviteMessage, setInviteMessage] = useState(""); // ✅ UNCHANGED
+    const [isSending, setIsSending] = useState(false); // ✅ UNCHANGED
 
-    const fetchApplications = async () => {
-        try {
-            const res = await api.applications.list();
-            setApplications(res);
-            setSelectedIds(new Set((res as any[]).map((app) => app.id)));
-        } catch (error: any) {
-            console.error("Failed to fetch applications:", error);
-            toast.error(`Error loading applications: ${error.message || "Please try again"}`);
-        } finally {
-            setIsLoading(false);
-        }
-    };
+    // ✨ NEW - OPTIMIZATION: React Query replaces the manual useState/useEffect/fetchApplications pattern.
+    // First visit: fetches from network. Every subsequent visit: instant 0ms cache hit.
+    const { data: applications = [], isLoading } = useApplications();
 
+    // ✨ NEW - OPTIMIZATION: auto-select all applications when the cached data first arrives.
+    // Preserves the original behaviour where all apps started selected for bulk resume download.
     useEffect(() => {
-        fetchApplications();
-    }, []);
+        if (applications.length > 0) {
+            setSelectedIds(new Set((applications as any[]).map((app) => app.id)));
+        }
+    }, [applications]);
 
     // ── Open invite modal
     const openInviteModal = (app: Application) => {
@@ -123,7 +119,7 @@ export default function ApplicationsPage() {
             await api.applications.invite(inviteApp.id, inviteSubject.trim(), inviteMessage.trim());
             toast.success(`Interview invitation sent to ${inviteApp.candidate?.email || "candidate"}!`);
             closeInviteModal();
-            fetchApplications(); // refresh status
+            queryClient.invalidateQueries({ queryKey: applicationKeys.lists() }); // ✨ NEW - OPTIMIZATION — refreshes list after invite
         } catch (err: any) {
             console.error("Invite error:", err);
             toast.error(`Failed to send invite: ${err.message || "Please try again."}`);
@@ -144,7 +140,7 @@ export default function ApplicationsPage() {
         try {
             await api.applications.delete(id);
             toast.success(`Application for ${name} deleted successfully`);
-            fetchApplications();
+            queryClient.invalidateQueries({ queryKey: applicationKeys.lists() }); // ✨ NEW - OPTIMIZATION — refreshes list after delete
         } catch (err: any) {
             console.error("Delete error:", err);
             toast.error(`Failed to delete application: ${err.message || "Unauthorized"}`);
@@ -213,7 +209,8 @@ export default function ApplicationsPage() {
         await Promise.all(toDownload.map(async (app) => {
             try {
                 const resumeUrl = app.candidate?.candidate_profile?.resume_url;
-                const response = await fetch(resumeUrl!);
+                if (!resumeUrl) return;
+                const response = await fetch(resumeUrl);
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const blob = await response.blob();
                 const name = (app.candidate?.full_name || "Unknown")
@@ -267,6 +264,7 @@ export default function ApplicationsPage() {
     // ── Render
     return (
         <div className="space-y-8">
+
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
@@ -333,7 +331,7 @@ export default function ApplicationsPage() {
                                             className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
                                         />
                                     </TableHead>
-                                    <TableHead className="w-[250px] pl-4">Candidate</TableHead>
+                                    <TableHead className="w-[220px] pl-4">Candidate</TableHead>
                                     <TableHead>City</TableHead>
                                     <TableHead>Qualification</TableHead>
                                     <TableHead>Job Role</TableHead>
@@ -364,6 +362,7 @@ export default function ApplicationsPage() {
                                                 className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
                                             />
                                         </TableCell>
+                                        {/* Candidate */}
                                         <TableCell className="pl-4 font-medium">
                                             <div className="flex items-center gap-3">
                                                 <Avatar className="h-9 w-9 border border-border">
@@ -471,22 +470,6 @@ export default function ApplicationsPage() {
                                         {/* Actions */}
                                         <TableCell className="text-right pr-6">
                                             <div className="flex justify-end items-center gap-1">
-                                                {/* Invite for Interview */}
-                                                <Button
-                                                    variant="outline"
-                                                    size="sm"
-                                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 gap-1.5"
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        openInviteModal(app);
-                                                    }}
-                                                    title="Send interview invitation email"
-                                                >
-                                                    <Mail className="w-3.5 h-3.5" />
-                                                    Invite
-                                                </Button>
-
-                                                {/* Download resume */}
                                                 {app.candidate?.candidate_profile?.resume_url && (
                                                     <Button
                                                         variant="ghost"
@@ -501,6 +484,21 @@ export default function ApplicationsPage() {
                                                         <Download className="w-4 h-4" />
                                                     </Button>
                                                 )}
+
+                                                {/* Invite for Interview */}
+                                                <Button
+                                                    variant="outline"
+                                                    size="sm"
+                                                    className="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-600 border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700 gap-1.5"
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        openInviteModal(app);
+                                                    }}
+                                                    title="Send interview invitation email"
+                                                >
+                                                    <Mail className="w-3.5 h-3.5" />
+                                                    Invite
+                                                </Button>
 
                                                 {/* Review */}
                                                 <Link href={`/dashboard/applications/${app.id}`}>
@@ -535,7 +533,10 @@ export default function ApplicationsPage() {
 
                                 {filteredApps.length === 0 && (
                                     <TableRow>
-                                        <TableCell colSpan={11} className="h-24 text-center text-muted-foreground">
+                                        <TableCell
+                                            colSpan={11}
+                                            className="h-24 text-center text-muted-foreground"
+                                        >
                                             No applications found.
                                         </TableCell>
                                     </TableRow>
