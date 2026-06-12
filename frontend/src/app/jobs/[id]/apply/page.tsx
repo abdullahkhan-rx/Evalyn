@@ -161,13 +161,23 @@ function JobApplicationInner({ id }: { id: string }) {
         );
     }
 
-    if (!job) {
+    if (!job || job.effective_status !== 'PUBLISHED') {
         return (
             <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4">
-                <h2 className="mb-4 text-2xl font-bold text-slate-900">Job not found</h2>
-                <Link href="/jobs">
-                    <Button variant="outline">Back to Jobs</Button>
-                </Link>
+                <div className="max-w-md w-full text-center space-y-6">
+                    <div className="mx-auto w-20 h-20 bg-amber-100 rounded-full flex items-center justify-center text-amber-600">
+                        <XCircle className="h-10 w-10" />
+                    </div>
+                    <div className="space-y-2">
+                        <h2 className="text-2xl font-bold text-slate-900">Applications Closed</h2>
+                        <p className="text-slate-600">
+                            We are no longer accepting applications for the <strong>{job?.title || 'this position'}</strong> role.
+                        </p>
+                    </div>
+                    <Link href="/jobs" className="block">
+                        <Button variant="outline" className="w-full">Browse Other Openings</Button>
+                    </Link>
+                </div>
             </div>
         );
     }

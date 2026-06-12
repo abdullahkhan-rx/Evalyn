@@ -1,7 +1,7 @@
 import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.orm import selectinload, joinedload
+from sqlalchemy.orm import selectinload, joinedload, noload  # ✨ noload added for P2 fix
 from src.api.models.application import Application, ApplicationStatus
 from src.api.models.candidate import CandidateProfile
 from src.api.models.user import User, UserRole
@@ -30,6 +30,17 @@ class ApplicationService:
         if existing:
             return existing
 
+        # Check job status and deadline
+        from src.api.services.job_service import JobService
+        from src.api.models.job import JobStatus
+        job_service = JobService(self.db)
+        job = await job_service.get_job(job_id)
+        if not job:
+            raise ValueError("Job not found")
+            
+        if job.effective_status != JobStatus.PUBLISHED:
+            raise ValueError("Applications for this position are closed.")
+
         application = Application(
             candidate_id=user_id,
             job_id=job_id,
@@ -37,7 +48,7 @@ class ApplicationService:
             cover_letter=cover_letter,
             phone_number=phone_number,
             source=source,
-            expected_salary=expected_salary,
+            expected_salary=str(expected_salary) if expected_salary is not None else None,
             city=city.strip().lower() if city else None,
             qualification=qualification.strip() if qualification else None,
         )
@@ -90,7 +101,11 @@ class ApplicationService:
             .options(
                 joinedload(Application.candidate).joinedload(User.candidate_profile),
                 joinedload(Application.job),
-                joinedload(Application.interview_session)
+                # ✨ OPTIMIZATION: noload prevents a lazy async load of interview_session during
+                # Pydantic serialization. Without this, removing the joinedload causes a
+                # MissingGreenlet crash because the Optional field is still in ApplicationResponse.
+                # noload() sets the attribute to None immediately — zero DB cost, zero crash.
+                noload(Application.interview_session),
             )
             .offset(skip)
             .limit(limit)
@@ -112,12 +127,34 @@ class ApplicationService:
         return result.scalars().all()
 
     async def reject_application(self, application_id: int) -> Application:
-        """Reject an application."""
+        """Reject an application and send rejection email."""
         application = await self.get_application_by_id(application_id)
         if not application:
             raise ValueError("Application not found")
-        
+
         application.status = ApplicationStatus.REJECTED
+        self.db.add(application)
+        await self.db.commit()
+        await self.db.refresh(application)
+
+        from src.api.services.email_service import EmailService
+
+        candidate = application.candidate
+        job = application.job
+
+        try:
+            sent = await EmailService.send_rejection_email(
+                candidate_email=candidate.email,
+                candidate_name=candidate.full_name or "Candidate",
+                job_title=job.title if job else "the position",
+            )
+            application.email_delivery_status = "SENT" if sent else "FAILED"
+            application.email_logs = "Rejection email sent." if sent else "Rejection email failed to deliver."
+        except Exception as e:
+            logger.error(f"[REJECT] Failed to send rejection email for application {application_id}: {e}")
+            application.email_delivery_status = "FAILED"
+            application.email_logs = f"Rejection email error: {str(e)}"
+
         self.db.add(application)
         await self.db.commit()
         await self.db.refresh(application)
@@ -185,7 +222,7 @@ class ApplicationService:
         experience_map = {
             "ENTRY_LEVEL": 0, "ASSOCIATE": 2, "MID_SENIOR": 5, "DIRECTOR": 8, "EXECUTIVE": 10
         }
-        level = str(application.job.experience_level.value) if hasattr(application.job.experience_level, 'value') else str(application.job.experience_level)
+        level = str(application.job.experience_level.value).upper() if hasattr(application.job.experience_level, 'value') else str(application.job.experience_level).upper()
         required_years = experience_map.get(level, 2)
         cand_years = profile.experience_years if profile else 0
         

@@ -90,6 +90,7 @@ const jobBasicSchema = z.object({
     salaryRange: z.string().optional(),
     aiPrompt: z.string().optional(),
     description: z.string(),
+    application_deadline: z.string().min(1, "Application deadline is required"),
 }).superRefine((data, ctx) => {
     const hasPrompt = Boolean(data.aiPrompt?.trim());
 
@@ -222,7 +223,7 @@ export default function CreateJobPage() {
 
     // Forms
     const form1 = useForm<Step1Data>({
-        resolver: zodResolver(jobBasicSchema),
+        resolver: zodResolver(jobBasicSchema) as any,
         defaultValues: {
             title: "",
             department: "",
@@ -239,11 +240,12 @@ export default function CreateJobPage() {
             salaryRange: "",
             aiPrompt: "",
             description: "",
+            application_deadline: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
         },
     });
 
     const form2 = useForm<Step2Data>({
-        resolver: zodResolver(aiConfigSchema),
+        resolver: zodResolver(aiConfigSchema) as any,
         defaultValues: {
             requiredSkills: "",
             experienceLevel: "mid",
@@ -731,6 +733,26 @@ Apply now and shape the future with us! #Hiring #${title.replace(/\s/g, '')} #Te
                                     />
                                     <FormField
                                         control={form1.control}
+                                        name="application_deadline"
+                                        render={({ field }) => (
+                                            <FormItem>
+                                                <FormLabel>Application Deadline</FormLabel>
+                                                <FormControl>
+                                                    <Input 
+                                                        type="date" 
+                                                        min={new Date().toISOString().split('T')[0]}
+                                                        {...field} 
+                                                    />
+                                                </FormControl>
+                                                <FormDescription>When should this job post close?</FormDescription>
+                                                <FormMessage />
+                                            </FormItem>
+                                        )}
+                                    />
+                                </div>
+                                <div className="grid grid-cols-1 gap-4">
+                                    <FormField
+                                        control={form1.control}
                                         name="requiredSkills"
                                         render={({ field }) => (
                                             <FormItem>
@@ -952,7 +974,7 @@ Apply now and shape the future with us! #Hiring #${title.replace(/\s/g, '')} #Te
                     ) : null}
 
                     {/* Error State */}
-                    {jobGeneration.error && (
+                    {jobGeneration.error && !jobGeneration.generatedPost && (
                         <Alert variant="destructive">
                             <AlertCircle className="h-4 w-4" />
                             <AlertTitle>Error</AlertTitle>
@@ -1314,6 +1336,8 @@ ${jobPost.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\
                                                                     salary_currency: formData.salaryCurrency || jobPost.suggested_salary_currency || "PKR",
                                                                     salary_period: formData.salaryPeriod || jobPost.suggested_salary_period || "monthly",
                                                                     salary_range: formData.salaryRange,
+                                                                    application_deadline: formData.application_deadline ? new Date(formData.application_deadline).toISOString() : undefined,
+                                                                    expires_at: formData.application_deadline ? new Date(formData.application_deadline).toISOString() : undefined,
                                                                 };
 
                                                                 console.log('STRICT_DATA_LOG: [Frontend] Sending job data to backend:', JSON.stringify(jobData, null, 2));

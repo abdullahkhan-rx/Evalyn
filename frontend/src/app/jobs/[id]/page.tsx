@@ -21,7 +21,9 @@ import {
     Bookmark,
     ArrowLeft,
     ArrowRight,
-    Loader2
+    Loader2,
+    XCircle,
+    AlertCircle
 } from "lucide-react";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -184,7 +186,7 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                             {/* Apply Card */}
                             <Card className="sticky top-24">
                                 <CardContent className="p-6 space-y-4">
-                                    {job.status === 'PUBLISHED' ? (
+                                     {job.effective_status === 'PUBLISHED' ? (
                                         <Link href={`/jobs/${job.id}/apply?source_url=${encodeURIComponent(typeof window !== 'undefined' ? window.location.href : '')}`}>
                                             <Button
                                                 size="lg"
@@ -195,18 +197,28 @@ export default function JobDetailPage({ params }: { params: Promise<{ id: string
                                             </Button>
                                         </Link>
                                     ) : (
-                                        <Button
-                                            size="lg"
-                                            disabled
-                                            className="w-full bg-slate-200 text-slate-500 h-12 text-base cursor-not-allowed hover:bg-slate-200"
-                                        >
-                                            {job.status === 'CLOSED' ? 'Position Closed' : 'Not Open For Applications'}
-                                        </Button>
+                                        <div className="space-y-3">
+                                            <Button
+                                                size="lg"
+                                                disabled
+                                                className="w-full bg-slate-100 text-slate-400 h-12 text-base cursor-not-allowed border-slate-200"
+                                            >
+                                                <XCircle className="mr-2 h-5 w-5" />
+                                                Applications Closed
+                                            </Button>
+                                            <div className="p-3 bg-amber-50 border border-amber-100 rounded-lg">
+                                                <p className="text-xs text-amber-800 flex gap-2">
+                                                    <AlertCircle className="h-4 w-4 shrink-0" />
+                                                    This position has reached its application deadline and is no longer accepting new submissions.
+                                                </p>
+                                            </div>
+                                        </div>
                                     )}
 
                                     <p className="text-sm text-slate-500 text-center">
-                                        {job.status === 'PUBLISHED' ? 'Takes 2 minutes • No account required' : 'This position is currently not accepting applications.'}
+                                        {job.effective_status === 'PUBLISHED' ? 'Takes 2 minutes • No account required' : 'Thank you for your interest. Please check back for future openings.'}
                                     </p>
+
 
                                     <Separator />
 

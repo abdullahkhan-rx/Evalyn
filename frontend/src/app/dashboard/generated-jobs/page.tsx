@@ -1,6 +1,7 @@
-'use client';
+'use client'; // ✅ UNCHANGED
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react'; // ✨ NEW - OPTIMIZATION (added useMemo)
+import { useQuery } from '@tanstack/react-query'; // ✨ NEW - OPTIMIZATION
 import { useJobs, usePublishJob } from '@/lib/hooks/useJobs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -39,67 +40,90 @@ export default function GeneratedJobsPage() {
 
     const jobs = jobsResponse?.filter(j => ['DRAFT', 'APPROVED', 'CHANGES_REQUESTED'].includes(j.status)) || [];
 
-    // Publish Dialog State
-    const [showPublishDialog, setShowPublishDialog] = useState(false);
-    const [selectedJob, setSelectedJob] = useState<any>(null);
-    const [connectedAccounts, setConnectedAccounts] = useState<ConnectedAccount[]>([]);
-    const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]);
-    const [isPublishing, setIsPublishing] = useState(false);
-    
-    // Feedback Dialog State
-    const [showFeedbackDialog, setShowFeedbackDialog] = useState(false);
-    const [feedbackToShow, setFeedbackToShow] = useState("");
+    // Publish Dialog State // ✅ UNCHANGED
+    const [showPublishDialog, setShowPublishDialog] = useState(false); // ✅ UNCHANGED
+    const [selectedJob, setSelectedJob] = useState<any>(null); // ✅ UNCHANGED
+    const [selectedAccounts, setSelectedAccounts] = useState<string[]>([]); // ✅ UNCHANGED
+    const [isPublishing, setIsPublishing] = useState(false); // ✅ UNCHANGED
 
-    // Fetch integrations on mount
-    useEffect(() => {
-        const fetchIntegrations = async () => {
-            try {
-                const integrations = await integrationsApi.list();
-                if (!Array.isArray(integrations)) return;
+    // Feedback Dialog State // ✅ UNCHANGED
+    const [showFeedbackDialog, setShowFeedbackDialog] = useState(false); // ✅ UNCHANGED
+    const [feedbackToShow, setFeedbackToShow] = useState(""); // ✅ UNCHANGED
 
-                const formatted = integrations.map(int => {
-                    const platform = int.platform.toLowerCase().trim();
-                    if (platform === 'linkedin') {
-                        return {
-                            id: int.id.toString(),
-                            platform: 'linkedin' as const,
-                            name: 'LinkedIn Account',
-                            handle: int.platform_user_id || 'Connected',
-                            icon: Linkedin,
-                            color: 'bg-blue-600',
-                        };
-                    } else if (platform === 'indeed') {
-                        return {
-                            id: int.id.toString(),
-                            platform: 'indeed' as const,
-                            name: 'Indeed Account',
-                            handle: int.platform_user_id || 'Connected',
-                            icon: Briefcase,
-                            color: 'bg-blue-600',
-                        };
-                    }
-                    return null;
-                }).filter(Boolean) as ConnectedAccount[];
+    // ✨ NEW - OPTIMIZATION: cached integrations fetch (5 min stale time).
+    // Previously fired a fresh network call every mount; now instant on revisit.
+    const { data: rawIntegrations = [] } = useQuery({
+        queryKey: ['integrations', 'list'],
+        queryFn: () => integrationsApi.list(),
+        staleTime: 5 * 60 * 1000, // 5 minutes — integrations rarely change
+    });
 
-                // Deduplicate
-                const uniquePlatforms = new Map<string, ConnectedAccount>();
-                formatted.forEach(acc => {
-                    if (!uniquePlatforms.has(acc.platform)) {
-                        uniquePlatforms.set(acc.platform, acc);
-                    }
-                });
-                const uniqueAccounts = Array.from(uniquePlatforms.values());
+    // ✨ NEW - OPTIMIZATION: derive connectedAccounts from cached data (replaces useState + useEffect).
+    // Same mapping + deduplication logic as before, now in useMemo so it reacts to cache updates.
+    const connectedAccounts = useMemo<ConnectedAccount[]>(() => {
+        if (!Array.isArray(rawIntegrations)) return [];
 
-                setConnectedAccounts(uniqueAccounts);
-                // Default select all
-                setSelectedAccounts(uniqueAccounts.map(a => a.id));
-            } catch (error) {
-                console.error("Failed to fetch integrations:", error);
+        const formatted = rawIntegrations.map((int: any) => {
+            const platform = int.platform.toLowerCase().trim();
+            if (platform === 'linkedin') {
+                return {
+                    id: int.id.toString(),
+                    platform: 'linkedin' as const,
+                    name: 'LinkedIn Account',
+                    handle: int.platform_user_id || 'Connected',
+                    icon: Linkedin,
+                    color: 'bg-blue-600',
+                };
+            } else if (platform === 'indeed') {
+                return {
+                    id: int.id.toString(),
+                    platform: 'indeed' as const,
+                    name: 'Indeed Account',
+                    handle: int.platform_user_id || 'Connected',
+                    icon: Briefcase,
+                    color: 'bg-blue-600',
+                };
             }
-        };
+            return null;
+        }).filter(Boolean) as ConnectedAccount[];
 
-        fetchIntegrations();
-    }, []);
+        // Deduplicate by platform // ✅ UNCHANGED LOGIC
+        const uniquePlatforms = new Map<string, ConnectedAccount>();
+        formatted.forEach(acc => {
+            if (!uniquePlatforms.has(acc.platform)) {
+                uniquePlatforms.set(acc.platform, acc);
+            }
+        });
+        return Array.from(uniquePlatforms.values());
+    }, [rawIntegrations]);
+
+    // ✨ NEW - OPTIMIZATION: auto-select all accounts whenever the cached list updates.
+    // Replaces the setConnectedAccounts + setSelectedAccounts calls that were inside useEffect.
+    useEffect(() => {
+        if (connectedAccounts.length > 0) {
+            setSelectedAccounts(connectedAccounts.map(a => a.id));
+        }
+    }, [connectedAccounts]);
+
+    const handleSendToManager = async (jobId: string, role?: string) => {
+        const roleNames: Record<string, string> = {
+            ai: "AI Lead",
+            uiux: "UI/UX Lead",
+            seo: "SEO Lead",
+            webdev: "Web Dev Lead",
+        };
+        const recipientName = role ? roleNames[role] : "Operation Manager";
+
+        const loadingToast = toast.loading(`Sending to ${recipientName}...`);
+        try {
+            await jobsApi.sendToManager(jobId, role);
+            toast.dismiss(loadingToast);
+            toast.success(`Job details sent to ${recipientName}!`);
+        } catch (error: any) {
+            toast.dismiss(loadingToast);
+            toast.error(`Failed to send: ${error.message || "Unknown error"}`);
+        }
+    };
 
     const handleOpenPublishDialog = (job: any) => {
         setSelectedJob(job);
@@ -224,7 +248,7 @@ export default function GeneratedJobsPage() {
                                                     variant="outline" 
                                                     className="bg-orange-50 text-orange-700 border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors"
                                                     onClick={() => {
-                                                        setFeedbackToShow(job.manager_feedback);
+                                                        setFeedbackToShow(job.manager_feedback ?? "");
                                                         setShowFeedbackDialog(true);
                                                     }}
                                                 >
@@ -267,20 +291,11 @@ export default function GeneratedJobsPage() {
                                     </Link>
                                     <Button
                                         variant="outline"
-                                        onClick={async () => {
-                                            try {
-                                                const loadingToast = toast.loading("Sending to Operation Manager...");
-                                                await jobsApi.sendToManager(job.id);
-                                                toast.dismiss(loadingToast);
-                                                toast.success("Job details sent to Operation Manager!");
-                                            } catch (error: any) {
-                                                toast.error(`Failed to send: ${error.message || "Unknown error"}`);
-                                            }
-                                        }}
                                         className="whitespace-nowrap flex gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                                        onClick={() => handleSendToManager(job.id)}
                                     >
                                         <Share2 className="h-4 w-4" />
-                                        Send to Manager
+                                        Send for Approval
                                     </Button>
                                     <Button
                                         onClick={() => handleOpenPublishDialog(job)}

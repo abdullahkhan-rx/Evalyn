@@ -4,7 +4,10 @@ from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.api.db.session import get_db
 from src.api.services.job_service import JobService
-from src.api.schemas.job import JobResponse, JobCreate, JobUpdate, JobImproveRequest, JobDraftRequest, JobReviewRequest
+from src.api.schemas.job import (
+    JobResponse, JobCreate, JobUpdate, JobImproveRequest, 
+    JobDraftRequest, JobReviewRequest, JobExtendDeadline, BulkLifecycleRequest
+)
 from src.api.core.dependencies import get_current_user
 from src.api.models.user import User
 
@@ -25,6 +28,15 @@ async def get_jobs_stats(
     job_service = JobService(db)
     count = await job_service.get_total_jobs_count()
     return {"total_jobs": count}
+
+@router.get("/stats/dashboard")
+async def get_dashboard_stats(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Returns dashboard statistics including pending actions"""
+    job_service = JobService(db)
+    return await job_service.get_dashboard_stats(user_id=current_user.id)
 
 from src.api.models.job import JobStatus
 
@@ -136,10 +148,11 @@ from src.api.services.email_service import EmailService
 @router.post("/{job_id}/send-to-manager")
 async def send_to_manager(
     job_id: int,
+    role: str = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Send job details to Operation Manager via Resend."""
+    """Send job details to a specific team lead or Operation Manager."""
     job_service = JobService(db)
     job = await job_service.get_job(job_id)
     if not job:
@@ -154,26 +167,95 @@ async def send_to_manager(
         f"\nDescription:\n{job.description}\n"
     )
 
+    # Map role to email
+    from src.api.core.config import settings
+    recipient_email = settings.OPERATIONS_MANAGER_EMAIL
+    
+    if role == "ai":
+        recipient_email = settings.AI_LEAD_EMAIL
+    elif role == "uiux":
+        recipient_email = settings.UIUX_LEAD_EMAIL
+    elif role == "seo":
+        recipient_email = settings.SEO_LEAD_EMAIL
+    elif role == "webdev":
+        recipient_email = settings.WEB_DEV_LEAD_EMAIL
+
     try:
-        from src.api.core.config import settings
         review_url = f"{settings.FRONTEND_URL}/review-job/{job_id}"
-        await EmailService.send_job_to_manager(job.title, details, review_url=review_url)
-        return {"message": "Email sent successfully"}
+        await EmailService.send_job_to_manager(job.title, details, review_url=review_url, recipient_email=recipient_email)
+        return {"message": f"Email sent successfully to {role or 'manager'}"}
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/{job_id}/review", response_model=JobResponse)
-async def review_job(
+@router.post("/{job_id}/extend-deadline", response_model=JobResponse)
+async def extend_deadline(
     job_id: int,
-    review_data: JobReviewRequest,
+    request: JobExtendDeadline,
+    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Operation Manager review endpoint (approves or requests changes)"""
+    """Extend the job application deadline"""
     job_service = JobService(db)
-    job = await job_service.review_job(job_id, review_data.status, review_data.feedback)
+    job = await job_service.extend_deadline(job_id, request.new_deadline, current_user.id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+@router.post("/{job_id}/close", response_model=JobResponse)
+async def close_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Manually close a job post"""
+    job_service = JobService(db)
+    job = await job_service.close_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+@router.post("/{job_id}/reopen", response_model=JobResponse)
+async def reopen_job(
+    job_id: int,
+    request: JobExtendDeadline,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Reopen a closed or expired job with a new deadline"""
+    job_service = JobService(db)
+    job = await job_service.reopen_job(job_id, request.new_deadline, current_user.id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+@router.post("/{job_id}/archive", response_model=JobResponse)
+async def archive_job(
+    job_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Archive a job post (final state)"""
+    job_service = JobService(db)
+    job = await job_service.archive_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+@router.post("/bulk/lifecycle")
+async def bulk_lifecycle_action(
+    request: BulkLifecycleRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Bulk action for job lifecycle (close, archive, extend)"""
+    job_service = JobService(db)
+    results = await job_service.bulk_action(
+        job_ids=request.job_ids,
+        action=request.action,
+        new_deadline=request.new_deadline,
+        user_id=current_user.id
+    )
+    return {"message": "Bulk action completed", "processed": len(results)}

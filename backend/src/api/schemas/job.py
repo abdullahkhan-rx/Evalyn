@@ -1,5 +1,5 @@
 from pydantic import BaseModel, field_validator
-from typing import Optional, List
+from typing import Optional, List, Any, Union
 from datetime import datetime
 from src.api.models.job import JobType, JobStatus, ExperienceLevel
 
@@ -23,6 +23,9 @@ class JobBase(BaseModel):
     preferred_qualifications: Optional[List[str]] = None
     benefits: Optional[List[str]] = None
     application_url: Optional[str] = None
+    tags: Optional[List[str]] = None
+    application_deadline: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
     
     @field_validator('job_type', 'experience_level', mode='before')
     @classmethod
@@ -36,27 +39,43 @@ class JobBase(BaseModel):
         
         # Convert string to enum if necessary
         if field_name == 'job_type' and isinstance(v, str):
-            v_upper = v.upper().replace('-', '_')
+            v_lower = v.lower().replace('-', '_')
             try:
-                return JobType(v_upper)
+                return JobType(v_lower)
             except ValueError:
-                # Try to find a matching enum value (case-insensitive)
+                # Try to find a matching enum member by name (case-insensitive)
                 for job_type in JobType:
-                    if job_type.value.upper() == v_upper or job_type.name.upper() == v_upper:
+                    if job_type.name.lower() == v_lower:
                         return job_type
                 raise ValueError(f"Invalid job_type: {v}. Valid values are: {', '.join([jt.value for jt in JobType])}")
-        
+
         elif field_name == 'experience_level' and isinstance(v, str):
-            v_upper = v.upper().replace('-', '_')
+            v_lower = v.lower().replace('-', '_')
             try:
-                return ExperienceLevel(v_upper)
+                return ExperienceLevel(v_lower)
             except ValueError:
-                # Try to find a matching enum value (case-insensitive)
+                # Try to find a matching enum member by name (case-insensitive)
                 for exp_level in ExperienceLevel:
-                    if exp_level.value.upper() == v_upper or exp_level.name.upper() == v_upper:
+                    if exp_level.name.lower() == v_lower:
                         return exp_level
                 raise ValueError(f"Invalid experience_level: {v}. Valid values are: {', '.join([el.value for el in ExperienceLevel])}")
         
+        return v
+
+    @field_validator('requirements', 'preferred_qualifications', 'required_skills', 'preferred_skills', 'benefits', 'tags', mode='before')
+    @classmethod
+    def parse_list_fields(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else [v]
+            except:
+                return [v]
         return v
     
 class JobCreate(JobBase):
@@ -82,14 +101,31 @@ class JobUpdate(BaseModel):
     preferred_qualifications: Optional[List[str]] = None
     benefits: Optional[List[str]] = None
     application_url: Optional[str] = None
+    tags: Optional[List[str]] = None
     manager_feedback: Optional[str] = None
+
+    @field_validator('requirements', 'preferred_qualifications', 'required_skills', 'preferred_skills', 'benefits', 'tags', mode='before')
+    @classmethod
+    def parse_list_fields(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, list):
+            return v
+        if isinstance(v, str):
+            import json
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else [v]
+            except:
+                return [v]
+        return v
 
 class JobDraftRequest(BaseModel):
     title: Optional[str] = None
     department: Optional[str] = None
     location: Optional[str] = "Remote"
-    experience_level: Optional[str] = "MID_SENIOR"
-    job_type: Optional[str] = "FULL_TIME"
+    experience_level: Optional[str] = "mid_senior"
+    job_type: Optional[str] = "full_time"
     required_skills: Optional[List[str]] = None
     prompt: Optional[str] = None
 
@@ -105,10 +141,23 @@ class JobResponse(JobBase):
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
-    status: Optional[JobStatus] = None
-    published_at: Optional[datetime] = None
     manager_feedback: Optional[str] = None
+    status: JobStatus
+    effective_status: Optional[JobStatus] = None
+    closed_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
+    reopened_at: Optional[datetime] = None
+    extended_at: Optional[datetime] = None
+    extended_by: Optional[int] = None
 
     class Config:
         from_attributes = True
         use_enum_values = True  # Serialize enums as their values (strings)
+
+class JobExtendDeadline(BaseModel):
+    new_deadline: datetime
+
+class BulkLifecycleRequest(BaseModel):
+    job_ids: List[int]
+    action: str  # 'close', 'archive', 'extend'
+    new_deadline: Optional[datetime] = None

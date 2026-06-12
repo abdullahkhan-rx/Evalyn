@@ -96,6 +96,13 @@ export interface Job {
   company_size?: string;
   company_website?: string;
   manager_feedback?: string;
+  preferred_qualifications?: string[];
+  effective_status?: JobStatus;
+  closed_at?: string;
+  archived_at?: string;
+  reopened_at?: string;
+  extended_at?: string;
+  extended_by?: number;
 }
 
 export interface JobIntent {

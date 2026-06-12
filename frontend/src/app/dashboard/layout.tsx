@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useUIStore } from '@/lib/stores/uiStore';
+import { useDashboardStats } from '@/lib/hooks/useJobs';
 import {
     Briefcase,
     Menu,
@@ -16,7 +17,8 @@ import {
     Sparkles,
     ChevronRight,
     Users,
-    ClipboardCheck
+    ClipboardCheck,
+    KanbanSquare
 } from 'lucide-react';
 
 /**
@@ -32,12 +34,8 @@ export default function DashboardLayout({
     const router = useRouter();
     const pathname = usePathname();
     const { isSidebarOpen, toggleSidebar } = useUIStore();
-    const [pendingActions, setPendingActions] = useState(0);
-
-    useEffect(() => {
-        // TODO: Fetch pending action count from API
-        setPendingActions(3);
-    }, []);
+    const { data: stats } = useDashboardStats();
+    const pendingActions = stats?.pending_actions || 0;
 
     const handleLogout = () => {
         if (typeof window !== 'undefined') {
@@ -52,8 +50,9 @@ export default function DashboardLayout({
 
     const navigation = [
         { name: 'Jobs', href: '/dashboard/jobs', icon: Briefcase },
-        { name: 'Applications', href: '/dashboard/applications', icon: Users },
         { name: 'Generated Jobs', href: '/dashboard/generated-jobs', icon: Sparkles },
+        { name: 'Applications', href: '/dashboard/applications', icon: Users },
+        { name: 'Pipeline', href: '/dashboard/pipeline', icon: KanbanSquare },
         { name: 'Onboarding', href: '/dashboard/onboarding', icon: ClipboardCheck },
         { name: 'Integrations', href: '/dashboard/integrations', icon: Link2 },
     ];

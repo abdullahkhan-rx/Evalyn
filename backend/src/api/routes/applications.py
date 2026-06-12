@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, File, UploadFile, Form, BackgroundTasks
+from pydantic import BaseModel
 import os
 import uuid
 import json
@@ -58,21 +59,14 @@ async def guest_apply(
     # 1. Handle Resume Upload
     resume_url = None
     if resume_file:
-        file_ext = os.path.splitext(resume_file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_ext}"
-        file_path = os.path.join(settings.UPLOAD_DIR, "resumes", unique_filename)
-        
-        # Write file to disk
-        from starlette.concurrency import run_in_threadpool
+        from src.api.utils.cloudinary_upload import upload_file
         content = await resume_file.read()
-        
-        def save_resume(path, data):
-            with open(path, "wb") as buffer:
-                buffer.write(data)
-                
-        await run_in_threadpool(save_resume, file_path, content)
-        
-        resume_url = f"/uploads/resumes/{unique_filename}"
+        safe_email = email.replace('@', '_at_').replace('+', '_')
+        resume_url = await upload_file(
+            content,
+            resume_file.filename,
+            folder=f"evalyn/resumes/{safe_email}"
+        )
     
     # Parse skills from JSON string
     try:
@@ -278,3 +272,115 @@ async def shortlist_application_route(
         return application
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+class InterviewInviteRequest(BaseModel):
+    subject: str
+    message: str
+
+
+@router.post("/{application_id}/invite")
+async def send_interview_invite(
+    application_id: int,
+    invite: InterviewInviteRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    HR manually sends a custom interview invitation email to the candidate.
+    Updates email_delivery_status and marks application as INTERVIEW_INVITED.
+    """
+    from sqlalchemy.future import select
+    from src.api.models.application import Application, ApplicationStatus
+    from src.api.services.email_service import send_email
+
+    result = await db.execute(
+        select(Application)
+        .where(Application.id == application_id)
+    )
+    application = result.scalars().first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # Load candidate and job lazily
+    await db.refresh(application, ["candidate", "job"])
+    candidate = application.candidate
+    job = application.job
+
+    # Build a clean branded HTML from the HR's custom message
+    html_body = f"""
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px;
+                margin: auto; padding: 30px; border: 1px solid #e2e8f0;
+                border-radius: 12px; color: #2d3748; line-height: 1.7;">
+        <div style="text-align: center; margin-bottom: 28px;">
+            <h1 style="color: #2b6cb0; font-size: 24px; margin: 0;">Interview Invitation</h1>
+        </div>
+        <p>Dear <strong>{candidate.full_name or 'Candidate'}</strong>,</p>
+        <div style="white-space: pre-wrap; margin: 20px 0;">{invite.message}</div>
+        <p style="margin-top: 30px;">Best regards,<br/>
+        <strong style="color: #2b6cb0;">The Hiring Team</strong><br/>
+        Evalyn AI</p>
+        <hr style="border: 0; border-top: 1px solid #edf2f7; margin: 30px 0;" />
+        <p style="font-size: 12px; color: #a0aec0; text-align: center;">
+            This email was sent regarding your application for
+            <strong>{job.title if job else 'our open position'}</strong>.
+        </p>
+    </div>
+    """
+
+    sent = await send_email(candidate.email, invite.subject, html_body)
+
+    if sent:
+        application.email_delivery_status = "SENT"
+        application.status = ApplicationStatus.INTERVIEW_INVITED
+        application.email_logs = f"Manual invite sent by HR. Subject: {invite.subject}"
+    else:
+        application.email_delivery_status = "FAILED"
+        application.email_logs = f"Manual invite failed. Subject: {invite.subject}"
+
+    db.add(application)
+    await db.commit()
+
+    if not sent:
+        raise HTTPException(status_code=500, detail="Email delivery failed. Please try again.")
+
+    return {
+        "success": True,
+        "message": f"Interview invitation sent to {candidate.email}",
+        "status": application.status
+    }
+
+
+class UpdateStatusRequest(BaseModel):
+    status: str
+
+
+@router.patch("/{application_id}/status", response_model=ApplicationResponse)
+async def update_application_status(
+    application_id: int,
+    body: UpdateStatusRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Move an application to any pipeline stage."""
+    from sqlalchemy.future import select
+    from src.api.models.application import Application, ApplicationStatus
+
+    if current_user.role not in [UserRole.ADMIN, UserRole.REVIEWER]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+
+    try:
+        new_status = ApplicationStatus(body.status.upper())
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"Invalid status: {body.status}")
+
+    result = await db.execute(select(Application).where(Application.id == application_id))
+    application = result.scalars().first()
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    application.status = new_status
+    db.add(application)
+    await db.commit()
+    await db.refresh(application, ["candidate", "job", "interview_session"])
+    return application

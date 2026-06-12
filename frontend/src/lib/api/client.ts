@@ -5,38 +5,37 @@ import axios, { AxiosInstance, AxiosRequestConfig, AxiosError } from 'axios';
  * Handles authentication, request/response interceptors, and error handling
  */
 
-const getApiBaseUrl = () => {
-    // 1. Use the dedicated API base URL if provided (e.g., "/api/v1" for proxying)
+const API_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://p01--evalyn-backend--9f7tw78rhdbh.code.run/api/v1';
+
+/**
+ * The backend base URL (FastAPI) — used to resolve relative /uploads/... URLs.
+ * NEXT_PUBLIC_API_BASE_URL already includes /api/v1, so strip that suffix.
+ */
+export const BACKEND_BASE_URL = (() => {
     if (process.env.NEXT_PUBLIC_API_BASE_URL) {
-        return process.env.NEXT_PUBLIC_API_BASE_URL;
+        return process.env.NEXT_PUBLIC_API_BASE_URL.replace(/\/api\/v[0-9]+$/, '');
     }
+    return process.env.NEXT_PUBLIC_BACKEND_URL || 'https://p01--evalyn-backend--9f7tw78rhdbh.code.run';
+})();
 
-    // 2. Fallback to LangGraph API URL if provided
-    const langgraphUrl = process.env.NEXT_PUBLIC_LANGGRAPH_API_URL;
-    if (langgraphUrl) {
-        // If it's a direct backend URL, ensure it has the /api/v1 prefix
-        return langgraphUrl.includes('/api/v1') ? langgraphUrl : `${langgraphUrl}/api/v1`;
-    }
-
-    // 3. Browser-side relative path (uses Next.js proxy)
-    if (typeof window !== "undefined") {
-        return "/api/v1";
-    }
-    
-    // 4. Server-side default
-    return "http://127.0.0.1:8123/api/v1";
-};
-
-const API_BASE_URL = getApiBaseUrl();
+/**
+ * Resolves a relative URL (like /uploads/...) to a full backend URL.
+ * Used for resumes, profile pictures, and recordings.
+ */
+export function resolveUrl(url: string | null | undefined): string {
+    if (!url) return '';
+    if (url.startsWith('http')) return url;
+    if (url.startsWith('/uploads')) return `${BACKEND_BASE_URL}${url}`;
+    return url;
+}
 
 class ApiClient {
     private client: AxiosInstance;
 
     constructor() {
         this.client = axios.create({
-            baseURL: getApiBaseUrl(),
+            baseURL: API_URL,
             timeout: 90000,
-            withCredentials: true,  // Must match backend allow_credentials: true
             headers: {
                 'Content-Type': 'application/json',
             },
