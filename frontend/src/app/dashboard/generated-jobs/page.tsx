@@ -6,7 +6,15 @@ import { useJobs, usePublishJob } from '@/lib/hooks/useJobs';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Sparkles, Calendar, ArrowRight, CheckCircle2, Loader2, Rocket, Briefcase, Linkedin, Check, Share2 } from 'lucide-react';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Sparkles, Calendar, ArrowRight, CheckCircle2, Loader2, Rocket, Briefcase, Linkedin, Check, Share2, ChevronDown, UserCheck } from 'lucide-react';
 import { format } from 'date-fns';
 import { useRouter } from 'next/navigation';
 import {
@@ -104,6 +112,26 @@ export default function GeneratedJobsPage() {
             setSelectedAccounts(connectedAccounts.map(a => a.id));
         }
     }, [connectedAccounts]);
+
+    const handleSendToManager = async (jobId: string, role?: string) => {
+        const roleNames: Record<string, string> = {
+            ai: "AI Lead",
+            uiux: "UI/UX Lead",
+            seo: "SEO Lead",
+            webdev: "Web Dev Lead",
+        };
+        const recipientName = role ? roleNames[role] : "Operation Manager";
+
+        const loadingToast = toast.loading(`Sending to ${recipientName}...`);
+        try {
+            await jobsApi.sendToManager(jobId, role);
+            toast.dismiss(loadingToast);
+            toast.success(`Job details sent to ${recipientName}!`);
+        } catch (error: any) {
+            toast.dismiss(loadingToast);
+            toast.error(`Failed to send: ${error.message || "Unknown error"}`);
+        }
+    };
 
     const handleOpenPublishDialog = (job: any) => {
         setSelectedJob(job);
@@ -269,23 +297,43 @@ export default function GeneratedJobsPage() {
                                             Review Details
                                         </Button>
                                     </Link>
-                                    <Button
-                                        variant="outline"
-                                        onClick={async () => {
-                                            try {
-                                                const loadingToast = toast.loading("Sending to Operation Manager...");
-                                                await jobsApi.sendToManager(job.id);
-                                                toast.dismiss(loadingToast);
-                                                toast.success("Job details sent to Operation Manager!");
-                                            } catch (error: any) {
-                                                toast.error(`Failed to send: ${error.message || "Unknown error"}`);
-                                            }
-                                        }}
-                                        className="whitespace-nowrap flex gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
-                                    >
-                                        <Share2 className="h-4 w-4" />
-                                        Send to Manager
-                                    </Button>
+                                    <DropdownMenu>
+                                        <DropdownMenuTrigger asChild>
+                                            <Button
+                                                variant="outline"
+                                                className="whitespace-nowrap flex gap-2 border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+                                            >
+                                                <Share2 className="h-4 w-4" />
+                                                Send for Approval
+                                                <ChevronDown className="h-4 w-4 opacity-50" />
+                                            </Button>
+                                        </DropdownMenuTrigger>
+                                        <DropdownMenuContent align="end" className="w-56">
+                                            <DropdownMenuLabel>Select Approver</DropdownMenuLabel>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleSendToManager(job.id, "ai")}>
+                                                <UserCheck className="mr-2 h-4 w-4" />
+                                                AI Lead
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSendToManager(job.id, "uiux")}>
+                                                <UserCheck className="mr-2 h-4 w-4" />
+                                                UI/UX Lead
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSendToManager(job.id, "seo")}>
+                                                <UserCheck className="mr-2 h-4 w-4" />
+                                                SEO Lead
+                                            </DropdownMenuItem>
+                                            <DropdownMenuItem onClick={() => handleSendToManager(job.id, "webdev")}>
+                                                <UserCheck className="mr-2 h-4 w-4" />
+                                                Web Dev Lead
+                                            </DropdownMenuItem>
+                                            <DropdownMenuSeparator />
+                                            <DropdownMenuItem onClick={() => handleSendToManager(job.id)}>
+                                                <Share2 className="mr-2 h-4 w-4" />
+                                                Operation Manager
+                                            </DropdownMenuItem>
+                                        </DropdownMenuContent>
+                                    </DropdownMenu>
                                     <Button
                                         onClick={() => handleOpenPublishDialog(job)}
                                         className="whitespace-nowrap bg-indigo-600 hover:bg-indigo-700 text-white gap-2"

@@ -39,6 +39,7 @@ const mapJob = (job: any): Job => ({
     benefits: job.benefits || [],
     application_url: job.application_url,
     status: job.status,
+    effective_status: job.effective_status,
     // Backward compatibility fields
     desiredSkills: job.preferred_skills || [],
     candidateCount: job.application_count || 0,
@@ -53,6 +54,11 @@ const mapJob = (job: any): Job => ({
     closedAt: job.expires_at,
     expires_at: job.expires_at,
     manager_feedback: job.manager_feedback,
+    closed_at: job.closed_at,
+    archived_at: job.archived_at,
+    reopened_at: job.reopened_at,
+    extended_at: job.extended_at,
+    extended_by: job.extended_by,
 });
 
 export const jobsApi = {
@@ -165,10 +171,48 @@ export const jobsApi = {
     },
 
     /**
-     * Send job details to Operation Manager
+     * Extend job deadline
      */
-    sendToManager: async (jobId: string): Promise<{ message: string }> => {
-        return apiClient.post<{ message: string }>(`/jobs/${jobId}/send-to-manager`);
+    extendDeadline: async (jobId: string, newDeadline: string): Promise<ApiResponse<Job>> => {
+        return apiClient.post<ApiResponse<Job>>(`/jobs/${jobId}/extend-deadline`, {
+            new_deadline: newDeadline
+        });
+    },
+
+    /**
+     * Reopen a closed job
+     */
+    reopen: async (jobId: string, newDeadline: string): Promise<ApiResponse<Job>> => {
+        return apiClient.post<ApiResponse<Job>>(`/jobs/${jobId}/reopen`, {
+            new_deadline: newDeadline
+        });
+    },
+
+    /**
+     * Archive job post
+     */
+    archive: async (jobId: string): Promise<ApiResponse<Job>> => {
+        return apiClient.post<ApiResponse<Job>>(`/jobs/${jobId}/archive`);
+    },
+
+    /**
+     * Bulk lifecycle action
+     */
+    bulkLifecycle: async (data: {
+        job_ids: string[];
+        action: 'close' | 'archive' | 'extend';
+        new_deadline?: string;
+    }): Promise<{ message: string; processed: number }> => {
+        return apiClient.post('/jobs/bulk/lifecycle', data);
+    },
+
+    /**
+     * Send job details to Operation Manager or specific Team Lead
+     */
+    sendToManager: async (jobId: string, role?: string): Promise<{ message: string }> => {
+        return apiClient.post<{ message: string }>(`/jobs/${jobId}/send-to-manager`, null, {
+            params: { role }
+        });
     },
 
     /**
