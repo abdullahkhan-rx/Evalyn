@@ -30,6 +30,17 @@ class ApplicationService:
         if existing:
             return existing
 
+        # Check job status and deadline
+        from src.api.services.job_service import JobService
+        from src.api.models.job import JobStatus
+        job_service = JobService(self.db)
+        job = await job_service.get_job(job_id)
+        if not job:
+            raise ValueError("Job not found")
+            
+        if job.effective_status != JobStatus.PUBLISHED:
+            raise ValueError("Applications for this position are closed.")
+
         application = Application(
             candidate_id=user_id,
             job_id=job_id,
@@ -209,9 +220,9 @@ class ApplicationService:
         # 2. Experience Match (30% weight)
         # Map Job Experience Level to required years
         experience_map = {
-            "entry_level": 0, "associate": 2, "mid_senior": 5, "director": 8, "executive": 10
+            "ENTRY_LEVEL": 0, "ASSOCIATE": 2, "MID_SENIOR": 5, "DIRECTOR": 8, "EXECUTIVE": 10
         }
-        level = str(application.job.experience_level.value) if hasattr(application.job.experience_level, 'value') else str(application.job.experience_level)
+        level = str(application.job.experience_level.value).upper() if hasattr(application.job.experience_level, 'value') else str(application.job.experience_level).upper()
         required_years = experience_map.get(level, 2)
         cand_years = profile.experience_years if profile else 0
         

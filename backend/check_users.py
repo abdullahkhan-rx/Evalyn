@@ -1,15 +1,16 @@
 import asyncio
+from sqlalchemy import select
 from src.api.db.session import engine
 from src.api.models.user import User
-from sqlalchemy import select
 
-async def check():
+async def main():
     async with engine.connect() as conn:
-        result = await conn.execute(select(User).where(User.email == 'razaali009123@gmail.com'))
-        rows = result.fetchall()
-        print(f"Users found with email 'razaali009123@gmail.com': {len(rows)}")
-        for row in rows:
-            print(f"ID: {row.id}, Role: {row.role}, Name: {row.full_name}")
+        result = await conn.execute(select(User))
+        users = result.fetchall()
+        
+        print(f"Users in DB:")
+        for user in users:
+            print(f"ID: {user.id}, Email: {user.email}, Full Name: {user.full_name}, Is Active: {user.is_active}")
 
 if __name__ == "__main__":
-    asyncio.run(check())
+    asyncio.run(main())

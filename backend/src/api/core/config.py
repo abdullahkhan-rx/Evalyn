@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     EMAILS_FROM_NAME: str = "Evalyn"
 
     OPERATIONS_MANAGER_EMAIL: str = "manager@evalyn.ai"
+    AI_LEAD_EMAIL: str = "ai-lead@evalyn.ai"
+    UIUX_LEAD_EMAIL: str = "uiux-lead@evalyn.ai"
+    SEO_LEAD_EMAIL: str = "seo-lead@evalyn.ai"
+    WEB_DEV_LEAD_EMAIL: str = "webdev-lead@evalyn.ai"
     HR_EMAIL: str = "hr@evalyn.ai"
     EMAIL_TEST_OVERRIDE: str = ""
     

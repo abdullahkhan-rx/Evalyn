@@ -5,18 +5,18 @@ from sqlalchemy.orm import relationship
 from src.api.db.base import Base
 from datetime import datetime, timezone
 import enum
-from sqlalchemy.dialects.postgresql import JSON
+from sqlalchemy.dialects.postgresql import JSON, ARRAY
 
 
 class JobType(str, enum.Enum):
     """Job type enumeration"""
-    FULL_TIME = "full_time"
-    PART_TIME = "part_time"
-    CONTRACT = "contract"
-    TEMPORARY = "temporary"
-    INTERNSHIP = "internship"
-    VOLUNTEER = "volunteer"
-    FREELANCE = "freelance"
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    CONTRACT = "CONTRACT"
+    TEMPORARY = "TEMPORARY"
+    INTERNSHIP = "INTERNSHIP"
+    VOLUNTEER = "VOLUNTEER"
+    FREELANCE = "FREELANCE"
 
 
 class JobStatus(str, enum.Enum):
@@ -32,15 +32,15 @@ class JobStatus(str, enum.Enum):
 
 class ExperienceLevel(str, enum.Enum):
     """Experience level enumeration"""
-    ENTRY_LEVEL = "entry_level"
-    JUNIOR = "junior"
-    ASSOCIATE = "associate"
-    MID = "mid"
-    MID_SENIOR = "mid_senior"
-    SENIOR = "senior"
-    LEAD = "lead"
-    DIRECTOR = "director"
-    EXECUTIVE = "executive"
+    ENTRY_LEVEL = "ENTRY_LEVEL"
+    JUNIOR = "JUNIOR"
+    ASSOCIATE = "ASSOCIATE"
+    MID = "MID"
+    MID_SENIOR = "MID_SENIOR"
+    SENIOR = "SENIOR"
+    LEAD = "LEAD"
+    DIRECTOR = "DIRECTOR"
+    EXECUTIVE = "EXECUTIVE"
 
 
 class Posts(Base):
@@ -82,12 +82,12 @@ class Posts(Base):
     application_deadline = Column(DateTime(timezone=True), nullable=True, comment="Application deadline")
     
     # Skills and Requirements
-    # NOTE: DB columns are of type `json` — must use JSON, not ARRAY(String)
-    required_skills = Column(JSON, nullable=True, comment="Required skills")
-    preferred_skills = Column(JSON, nullable=True, comment="Preferred skills")
-    requirements = Column(JSON, nullable=True, comment="Mandatory requirements/qualifications")
-    preferred_qualifications = Column(JSON, nullable=True, comment="Preferred qualifications")
-    benefits = Column(JSON, nullable=True, comment="Job benefits")
+    # NOTE: DB columns are of type `ARRAY(String)`
+    required_skills = Column(ARRAY(String), nullable=True, comment="Required skills")
+    preferred_skills = Column(ARRAY(String), nullable=True, comment="Preferred skills")
+    requirements = Column(ARRAY(String), nullable=True, comment="Mandatory requirements/qualifications")
+    preferred_qualifications = Column(ARRAY(String), nullable=True, comment="Preferred qualifications")
+    benefits = Column(ARRAY(String), nullable=True, comment="Job benefits")
     
     # Status and Publishing
     status = Column(SQLEnum(JobStatus, values_callable=lambda x: [e.value for e in x]), nullable=False, default=JobStatus.DRAFT, index=True, comment="Current status")
@@ -103,7 +103,7 @@ class Posts(Base):
     slug = Column(String(500), nullable=True, unique=True, index=True, comment="URL-friendly slug")
     meta_title = Column(String(200), nullable=True, comment="SEO meta title")
     meta_description = Column(String(500), nullable=True, comment="SEO meta description")
-    tags = Column(JSON, nullable=True, comment="Tags for categorization")
+    tags = Column(ARRAY(String), nullable=True, comment="Tags for categorization")
     
     manager_feedback = Column(Text, nullable=True, comment="Feedback from Operation Manager")
     
@@ -117,6 +117,14 @@ class Posts(Base):
     # FIXED: Changed from UUID to Integer to match users.id
     created_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     
+    # Audit History
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
+    reopened_at = Column(DateTime(timezone=True), nullable=True)
+    extended_at = Column(DateTime(timezone=True), nullable=True)
+    extended_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+
+    # Timestamps
     # Timestamps
     created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime(timezone=True), nullable=True, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
@@ -124,6 +132,25 @@ class Posts(Base):
 
     # Relationships
     creator = relationship("User", back_populates="jobs", foreign_keys=[created_by])
+    deadline_history = relationship("JobDeadlineHistory", back_populates="job", cascade="all, delete-orphan")
+
+    @property
+    def effective_status(self) -> JobStatus:
+        """
+        Dynamically determine the job status based on hard status and deadline.
+        Rules:
+        - If ARCHIVED or CLOSED hard status, return that.
+        - If PUBLISHED but expires_at has passed, return CLOSED.
+        - Otherwise return hard status.
+        """
+        if self.status in [JobStatus.ARCHIVED, JobStatus.CLOSED]:
+            return self.status
+            
+        if self.status == JobStatus.PUBLISHED and self.expires_at:
+            if datetime.now(timezone.utc) > self.expires_at:
+                return JobStatus.CLOSED
+                
+        return self.status
 
     def to_dict(self):
         """Convert model to dictionary"""
@@ -152,8 +179,14 @@ class Posts(Base):
             "preferred_qualifications": self.preferred_qualifications,
             "benefits": self.benefits,
             "status": self.status.value if self.status else None,
+            "effective_status": self.effective_status.value if self.effective_status else None,
             "published_at": self.published_at.isoformat() if self.published_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
+            "closed_at": self.closed_at.isoformat() if self.closed_at else None,
+            "archived_at": self.archived_at.isoformat() if self.archived_at else None,
+            "reopened_at": self.reopened_at.isoformat() if self.reopened_at else None,
+            "extended_at": self.extended_at.isoformat() if self.extended_at else None,
+            "extended_by": self.extended_by,
             "company_name": self.company_name,
             "company_logo_url": self.company_logo_url,
             "company_website": self.company_website,
@@ -188,3 +221,21 @@ class Posts(Base):
         if self.is_remote:
             return f"Remote" + (f" ({self.location})" if self.location else "")
         return self.location or "Location not specified"
+
+
+class JobDeadlineHistory(Base):
+    """
+    Tracks changes to job application deadlines for audit purposes.
+    """
+    __tablename__ = "job_deadline_history"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(Integer, ForeignKey("posts.id", ondelete="CASCADE"), nullable=False, index=True)
+    previous_expiry = Column(DateTime(timezone=True), nullable=True)
+    new_expiry = Column(DateTime(timezone=True), nullable=False)
+    changed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    changed_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+
+    # Relationships
+    job = relationship("Posts", back_populates="deadline_history")
+    user = relationship("User")

@@ -231,7 +231,7 @@ class EmailService:
         return await send_email(email, subject, html)
 
     @staticmethod
-    async def send_job_to_manager(job_title: str, job_details: str, review_url: str = None) -> bool:
+    async def send_job_to_manager(job_title: str, job_details: str, review_url: str = None, recipient_email: str = None) -> bool:
         """
         Internal notification to manager for job review.
         """
@@ -269,7 +269,8 @@ class EmailService:
             </p>
         </div>
         """
-        return await send_email(settings.OPERATIONS_MANAGER_EMAIL, subject, html)
+        target_email = recipient_email or settings.OPERATIONS_MANAGER_EMAIL
+        return await send_email(target_email, subject, html)
 
     @staticmethod
     async def send_new_application_notification(candidate_name: str, candidate_email: str, job_title: str, source: str, resume_link: str = None) -> bool:

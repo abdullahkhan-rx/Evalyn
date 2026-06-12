@@ -24,6 +24,8 @@ class JobBase(BaseModel):
     benefits: Optional[List[str]] = None
     application_url: Optional[str] = None
     tags: Optional[List[str]] = None
+    application_deadline: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
     
     @field_validator('job_type', 'experience_level', mode='before')
     @classmethod
@@ -139,10 +141,23 @@ class JobResponse(JobBase):
     created_by: int
     created_at: datetime
     updated_at: Optional[datetime] = None
-    status: Optional[JobStatus] = None
-    published_at: Optional[datetime] = None
     manager_feedback: Optional[str] = None
+    status: JobStatus
+    effective_status: Optional[JobStatus] = None
+    closed_at: Optional[datetime] = None
+    archived_at: Optional[datetime] = None
+    reopened_at: Optional[datetime] = None
+    extended_at: Optional[datetime] = None
+    extended_by: Optional[int] = None
 
     class Config:
         from_attributes = True
         use_enum_values = True  # Serialize enums as their values (strings)
+
+class JobExtendDeadline(BaseModel):
+    new_deadline: datetime
+
+class BulkLifecycleRequest(BaseModel):
+    job_ids: List[int]
+    action: str  # 'close', 'archive', 'extend'
+    new_deadline: Optional[datetime] = None
