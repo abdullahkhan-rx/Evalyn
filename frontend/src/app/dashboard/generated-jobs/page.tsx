@@ -213,19 +213,19 @@ export default function GeneratedJobsPage() {
                                         </h3>
                                         {/* Status Badge */}
                                         <div className="flex gap-2">
-                                            <Badge 
+                                            <Badge
                                                 variant={
-                                                    job.status === "APPROVED" ? "outline" : 
-                                                    job.status === "CHANGES_REQUESTED" ? "destructive" : 
-                                                    "secondary"
-                                                } 
+                                                    job.status === "APPROVED" ? "outline" :
+                                                        job.status === "CHANGES_REQUESTED" ? "destructive" :
+                                                            "secondary"
+                                                }
                                                 className={`capitalize ${job.status === 'APPROVED' ? 'bg-green-50 text-green-700 border-green-200' : ''}`}
                                             >
                                                 {job.status.toLowerCase().replace('_', ' ')}
                                             </Badge>
                                             {job.manager_feedback && (
-                                                <Badge 
-                                                    variant="outline" 
+                                                <Badge
+                                                    variant="outline"
                                                     className="bg-orange-50 text-orange-700 border-orange-100 cursor-pointer hover:bg-orange-100 transition-colors"
                                                     onClick={() => {
                                                         setFeedbackToShow(job.manager_feedback ?? "");
@@ -408,7 +408,7 @@ export default function GeneratedJobsPage() {
                         <Button variant="outline" onClick={() => setShowFeedbackDialog(false)}>
                             Close
                         </Button>
-                        <Button 
+                        <Button
                             className="bg-indigo-600 hover:bg-indigo-700 text-white"
                             onClick={() => {
                                 setShowFeedbackDialog(false);

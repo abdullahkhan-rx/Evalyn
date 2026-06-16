@@ -52,16 +52,24 @@ export default function DashboardJobDetailsPage({ params }: { params: Promise<{ 
         title: "",
         description: "",
         location: "",
-        department: ""
+        department: "",
+        application_deadline: ""
     });
 
     const openEditDialog = () => {
         if (job) {
+            // Convert ISO date string to YYYY-MM-DD for date input
+            let deadlineValue = "";
+            const dl = job.application_deadline || job.expires_at;
+            if (dl) {
+                try { deadlineValue = new Date(dl).toISOString().split('T')[0]; } catch {}
+            }
             setEditForm({
                 title: job.title || "",
                 description: job.description || "",
                 location: job.location || "",
-                department: job.department || ""
+                department: job.department || "",
+                application_deadline: deadlineValue
             });
             setShowEditDialog(true);
         }
@@ -86,7 +94,15 @@ export default function DashboardJobDetailsPage({ params }: { params: Promise<{ 
     const handleManualSave = async () => {
         setIsUpdating(true);
         try {
-            await jobsApi.update(id, editForm);
+            const payload: any = { ...editForm };
+            if (editForm.application_deadline) {
+                payload.application_deadline = new Date(editForm.application_deadline).toISOString();
+                payload.expires_at = payload.application_deadline;
+            } else {
+                payload.application_deadline = null;
+                payload.expires_at = null;
+            }
+            await jobsApi.update(id, payload);
             toast.success("Job updated successfully!");
             setShowEditDialog(false);
             refetchJob();
@@ -457,7 +473,7 @@ export default function DashboardJobDetailsPage({ params }: { params: Promise<{ 
                                         } else if (account?.platform === 'indeed') {
                                             return integrationsApi.indeed.postJob({
                                                 title: job.title,
-                                                description: `${job.description}\n\nApply Now: ${jobUrl}`,
+                                                description: `${descriptionObj}\n\nApply Now: ${jobUrl}`,
                                                 location: job.location || 'Remote',
                                                 company: job.company_name || job.department || 'Our Company'
                                             });
@@ -574,6 +590,15 @@ export default function DashboardJobDetailsPage({ params }: { params: Promise<{ 
                                 value={editForm.department}
                                 onChange={(e) => setEditForm(prev => ({ ...prev, department: e.target.value }))}
                             />
+                        </div>
+                        <div className="space-y-2">
+                            <label className="text-sm font-medium">Application Deadline</label>
+                            <Input
+                                type="date"
+                                value={editForm.application_deadline}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, application_deadline: e.target.value }))}
+                            />
+                            <p className="text-xs text-muted-foreground">Required for the deadline to appear in LinkedIn posts.</p>
                         </div>
                         <div className="md:col-span-2 space-y-2">
                             <label className="text-sm font-medium">Description</label>

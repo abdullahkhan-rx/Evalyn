@@ -101,6 +101,8 @@ class JobUpdate(BaseModel):
     preferred_qualifications: Optional[List[str]] = None
     benefits: Optional[List[str]] = None
     application_url: Optional[str] = None
+    application_deadline: Optional[datetime] = None
+    expires_at: Optional[datetime] = None
     tags: Optional[List[str]] = None
     manager_feedback: Optional[str] = None
 

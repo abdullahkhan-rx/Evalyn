@@ -53,6 +53,7 @@ const mapJob = (job: any): Job => ({
     published_at: job.published_at,
     closedAt: job.expires_at,
     expires_at: job.expires_at,
+    application_deadline: job.application_deadline,
     manager_feedback: job.manager_feedback,
 });
 

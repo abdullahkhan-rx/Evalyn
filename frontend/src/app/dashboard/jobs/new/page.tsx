@@ -339,6 +339,12 @@ export default function CreateJobPage() {
                     salaryDisplay = `Salary: Competitive / Market Standard`;
                 }
 
+                const deadlineDisplay = (() => {
+                    const dl = form1.getValues("applicationDeadline");
+                    if (!dl) return "";
+                    try { return `\n\n⏳ Application Deadline: ${new Date(dl).toLocaleDateString()}`; } catch { return ""; }
+                })();
+
                 const structuredDesc = `🔹 JOB SUMMARY
 ${draft.summary || `We are seeking a talented ${values.title} to join our ${values.department || 'team'}.`}
 
@@ -352,7 +358,7 @@ ${formatList(draft.skills)}
 ${formatList(draft.requirements)}
 
 ${draft.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\n${formatList(draft.preferred_qualifications)}\n\n` : ''}${draft.benefits?.length > 0 ? `🔹 BENEFITS\n${formatList(draft.benefits)}\n\n` : ''}🔹 SALARY & COMPENSATION
-- ${salaryDisplay}`;
+- ${salaryDisplay}${deadlineDisplay}`;
 
                 form1.setValue("description", structuredDesc);
 
@@ -431,6 +437,17 @@ ${draft.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\n$
                 form1.setValue("responsibilities", draft.responsibilities?.join('\n') || "");
                 form1.setValue("qualifications", draft.requirements?.join('\n') || "");
 
+                if (draft.application_deadline) {
+                    try {
+                        const dateObj = new Date(draft.application_deadline);
+                        if (!isNaN(dateObj.getTime())) {
+                            form1.setValue("applicationDeadline", dateObj.toISOString().split('T')[0], { shouldValidate: true });
+                        }
+                    } catch (e) {
+                        console.error('Could not parse extracted application deadline:', draft.application_deadline);
+                    }
+                }
+
                 // Salary — fill only if user hasn't set one
                 const hasUserSalary = (form1.getValues("salaryMin") || 0) > 0;
                 if (!hasUserSalary && draft.suggested_salary_min) {
@@ -452,6 +469,12 @@ ${draft.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\n$
                         ? `Salary Range: ${sCurr} ${sMin.toLocaleString()} – ${sMax.toLocaleString()} per ${sPeriod.replace('ly', '')}`
                         : "Salary: Competitive / Market Standard";
 
+                const deadlineLineAI = (() => {
+                    const dl = form1.getValues("applicationDeadline");
+                    if (!dl) return "";
+                    try { return `\n\n⏳ Application Deadline: ${new Date(dl).toLocaleDateString()}`; } catch { return ""; }
+                })();
+
                 const structuredDesc = `🔹 JOB SUMMARY
 ${draft.summary}
 
@@ -465,7 +488,7 @@ ${formatList(draft.skills)}
 ${formatList(draft.requirements)}
 
 ${draft.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\n${formatList(draft.preferred_qualifications)}\n\n` : ''}${draft.benefits?.length > 0 ? `🔹 BENEFITS\n${formatList(draft.benefits)}\n\n` : ''}🔹 SALARY & COMPENSATION
-- ${salaryDisplay}`;
+- ${salaryDisplay}${deadlineLineAI}`;
 
                 form1.setValue("description", structuredDesc, { shouldValidate: true });
                 toast.success("Job Description generated! Review and edit all fields before saving.");
@@ -518,23 +541,30 @@ Apply now and shape the future with us! #Hiring #${title.replace(/\s/g, '')} #Te
         try {
             const publishPromises = selectedAccounts.map(async (accId) => {
                 const account = connectedAccounts.find(a => a.id === accId);
-                if (account?.platform === 'linkedin') {
-                    // STRICT REQUIREMENT: Use full AI-generated structured JD, not the short social summary.
-                    let fullDescription = form1.getValues("description");
-                    const deadline = form1.getValues("applicationDeadline");
-                    if (deadline) {
-                        const dl = new Date(deadline);
+                if (!account) return null;
+
+                let fullDescription = form1.getValues("description");
+                const deadline = form1.getValues("applicationDeadline");
+                
+                // Consistency check: Only append if not already present in the description
+                if (deadline && !fullDescription.includes("⏳ Application Deadline:")) {
+                    const dl = new Date(deadline);
+                    if (!isNaN(dl.getTime())) {
                         fullDescription += `\n\n⏳ Application Deadline: ${dl.toLocaleDateString()}`;
                     }
+                }
+
+                if (account.platform === 'linkedin') {
+                    // LinkedIn publish - article_url is optional but we don't have a job ID yet
+                    // unless it was saved. In new/page.tsx, we usually save first, 
+                    // but if this is called before save, we just post the text.
                     return integrationsApi.linkedin.publish(fullDescription);
-                } else if (account?.platform === 'indeed') {
-                    // Also ensure Indeed uses the full description for consistency
-                    const fullDescription = form1.getValues("description");
+                } else if (account.platform === 'indeed') {
                     return integrationsApi.indeed.postJob({
-                        title: formData.title || 'Job Opening',
+                        title: formData.title || form1.getValues("title") || 'Job Opening',
                         description: fullDescription,
-                        location: formData.location || 'Remote',
-                        company: formData.department || 'Our Company'
+                        location: formData.location || form1.getValues("location") || 'Remote',
+                        company: formData.department || form1.getValues("department") || 'Our Company'
                     });
                 }
             });
@@ -1297,6 +1327,12 @@ Apply now and shape the future with us! #Hiring #${title.replace(/\s/g, '')} #Te
                                                                     salaryDisplay = `Salary: Competitive / Market Standard`;
                                                                 }
 
+                                                                const deadlineLineSaveDB = (() => {
+                                                                    const dlVal = form1.getValues("applicationDeadline") || formData.applicationDeadline;
+                                                                    if (!dlVal) return "";
+                                                                    try { return `\n\n⏳ Application Deadline: ${new Date(dlVal).toLocaleDateString()}`; } catch { return ""; }
+                                                                })();
+
                                                                 const finalFullDescription = `🔹 JOB SUMMARY
 ${jobPost.summary}
 
@@ -1310,7 +1346,7 @@ ${formatList(jobPost.skills)}
 ${formatList(jobPost.requirements)}
 
 ${jobPost.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\n${formatList(jobPost.preferred_qualifications)}\n\n` : ''}${jobPost.benefits?.length > 0 ? `🔹 BENEFITS\n${formatList(jobPost.benefits)}\n\n` : ''}🔹 SALARY & COMPENSATION
-- ${salaryDisplay}`;
+- ${salaryDisplay}${deadlineLineSaveDB}`;
 
                                                                 // Prepare the job data
                                                                 const jobData = {
@@ -1332,7 +1368,7 @@ ${jobPost.preferred_qualifications?.length > 0 ? `🔹 PREFERRED QUALIFICATIONS\
                                                                     salary_currency: formData.salaryCurrency || jobPost.suggested_salary_currency || "PKR",
                                                                     salary_period: formData.salaryPeriod || jobPost.suggested_salary_period || "monthly",
                                                                     salary_range: formData.salaryRange,
-                                                                    application_deadline: formData.applicationDeadline ? new Date(formData.applicationDeadline).toISOString() : undefined,
+                                                                    application_deadline: (form1.getValues("applicationDeadline") || formData.applicationDeadline) ? new Date(form1.getValues("applicationDeadline") || formData.applicationDeadline || "").toISOString() : undefined,
                                                                 };
 
                                                                 console.log('STRICT_DATA_LOG: [Frontend] Sending job data to backend:', JSON.stringify(jobData, null, 2));

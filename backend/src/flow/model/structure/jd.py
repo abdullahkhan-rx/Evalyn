@@ -65,6 +65,12 @@ class JobPost(BaseModel):
         description="URL to apply for the job"
     )
 
+    application_deadline: Optional[str] = Field(
+        default=None,
+        description="Application deadline date (YYYY-MM-DD or readable string) if specified in the prompt",
+        examples=["2026-07-30", "July 30, 2026"]
+    )
+
     suggested_salary_min: int = Field(
         default=0,
         description="AI suggested minimum salary based on market standards"
